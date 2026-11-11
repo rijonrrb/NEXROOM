@@ -10,10 +10,11 @@ export default function WaveVisual() {
     if (!ctx) return
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
     const mobile = window.matchMedia('(max-width: 760px)')
-    let width = 600, height = 480, frame = 0, raf = 0, running = true
+    let width = 600, height = 480, raf = 0, running = !document.hidden, inView = true
+    let elapsed = 0, lastTimestamp = 0
     let yaw = -0.38, pitch = 0.34, targetYaw = yaw, targetPitch = pitch
     let dragging = false, prevX = 0, prevY = 0
-    const columns = 70, rows = 44
+    const columns = 54, rows = 34
     const coords = Array.from({length: columns * rows}, (_, i) => ({
       x: (i % columns / (columns - 1) - .5) * 3.75,
       z: (Math.floor(i / columns) / (rows - 1) - .5) * 2.9,
@@ -40,7 +41,7 @@ export default function WaveVisual() {
     const onResize = () => {
       const r = canvas.getBoundingClientRect()
       width = Math.max(1, r.width); height = Math.max(1, r.height)
-      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5)
       canvas.width = Math.round(width * dpr)
       canvas.height = Math.round(height * dpr)
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -59,11 +60,17 @@ export default function WaveVisual() {
       .43 * Math.sin(x * 2.45 - t * .72) * Math.cos(z * 2.4 + t * .36)
       + .17 * Math.sin(x * 4.3 + z * 2.2 + t * .57)
       + .035 * Math.sin(x * 12.2 - z * 9.1 + t * 1.2)
-    const draw = () => {
+    const draw = (timestamp?: number) => {
+      raf = 0
+      if (!running || !inView) return
+      if (timestamp !== undefined) {
+        if (lastTimestamp) elapsed += Math.min((timestamp - lastTimestamp) / 1000, .05)
+        lastTimestamp = timestamp
+      }
       if (mobile.matches) return
       yaw += (targetYaw - yaw) * .11
       pitch += (targetPitch - pitch) * .11
-      const t = reduceMotion.matches ? 2 : frame / 42
+      const t = reduceMotion.matches ? 2 : elapsed * 1.43
       ctx.clearRect(0, 0, width, height)
       const corners = [
         [-1.22,-.73,-1.02],[1.22,-.73,-1.02],[1.22,-.73,1.02],[-1.22,-.73,1.02],
@@ -80,7 +87,7 @@ export default function WaveVisual() {
         return {...rotate(p.x,h,p.z), h}
       })
       ctx.globalCompositeOperation = 'screen'
-      for(let r=0;r<rows;r+=2){
+      for(let r=0;r<rows;r+=3){
         ctx.beginPath()
         for(let c=0;c<columns;c++){
           const p=pts[r*columns+c]
@@ -88,7 +95,7 @@ export default function WaveVisual() {
         }
         ctx.strokeStyle='rgba(245,197,24,.10)';ctx.lineWidth=.65;ctx.stroke()
       }
-      for(let c=0;c<columns;c+=3){
+      for(let c=0;c<columns;c+=4){
         ctx.beginPath()
         for(let r=0;r<rows;r++){
           const p=pts[r*columns+c]
@@ -103,7 +110,7 @@ export default function WaveVisual() {
       })
       ctx.globalCompositeOperation='source-over'
       // Tiny scattered particles make the signal feel alive beyond the wireframe.
-      for (let i=0;i<95;i++) {
+      for (let i=0;i<56;i++) {
         const x=Math.sin(i*19.13)*1.9
         const z=Math.cos(i*7.91)*1.47
         const y=Math.sin(i*11.3+t*.48)*.95
@@ -111,20 +118,26 @@ export default function WaveVisual() {
         ctx.fillStyle='rgba(245,197,24,'+(.08+.22*(.5+.5*Math.sin(t*.7+i)))+')'
         ctx.beginPath();ctx.arc(q.x,q.y,i%7===0?1.4:.75,0,Math.PI*2);ctx.fill()
       }
-      if (!reduceMotion.matches && running) {frame++;raf=requestAnimationFrame(draw)}
+      if (!reduceMotion.matches && running && inView) raf=requestAnimationFrame(draw)
     }
     const observer = new ResizeObserver(onResize)
     observer.observe(canvas)
+    const visibilityObserver = new IntersectionObserver(entries => {
+      inView = entries[0]?.isIntersecting ?? false
+      if (inView && running && !raf) { lastTimestamp = 0; raf = requestAnimationFrame(draw) }
+      if (!inView) { cancelAnimationFrame(raf); raf = 0; lastTimestamp = 0 }
+    }, {threshold: .02})
+    visibilityObserver.observe(canvas)
     canvas.addEventListener('pointerdown',onDown)
     canvas.addEventListener('pointermove',onMove)
     canvas.addEventListener('pointerup',onUp)
     canvas.addEventListener('pointercancel',onUp)
     canvas.addEventListener('pointerleave',onLeave)
-    const visibility = () => {running=!document.hidden;if(running){cancelAnimationFrame(raf);raf=requestAnimationFrame(draw)}}
+    const visibility = () => {running=!document.hidden;cancelAnimationFrame(raf);raf=0;lastTimestamp=0;if(running && inView)raf=requestAnimationFrame(draw)}
     document.addEventListener('visibilitychange',visibility)
     onResize()
     return () => {
-      running=false;cancelAnimationFrame(raf);observer.disconnect()
+      running=false;cancelAnimationFrame(raf);observer.disconnect();visibilityObserver.disconnect()
       canvas.removeEventListener('pointerdown',onDown)
       canvas.removeEventListener('pointermove',onMove)
       canvas.removeEventListener('pointerup',onUp)
