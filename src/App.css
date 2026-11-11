@@ -19,3 +19,22 @@ html{scroll-behavior:smooth}body{margin:0;min-width:320px}button,input,textarea{
 .visual__mesh-label{position:absolute;right:9%;bottom:10%;font:500 9px 'JetBrains Mono',monospace;letter-spacing:.12em;color:#8e813f;pointer-events:none}
 @media(max-width:760px){.visual--mesh{margin-inline:-7%;height:310px}}
 @media(max-width:475px){.visual--mesh{margin-inline:-9%;height:255px}.visual__mesh-label{font-size:8px}}
+
+/* Mobile: decorative lightweight SVG wave behind the hero, never a separate blank row. */
+.visual__mobile-wave{display:none}
+@media(max-width:760px){
+ .hero{display:block;isolation:isolate;padding-bottom:65px}
+ .hero__copy{position:relative;z-index:2}
+ .visual--mesh{position:absolute;z-index:0;inset:0;width:auto;height:auto;margin:0;overflow:hidden;pointer-events:none;mask-image:none;opacity:.58}
+ .visual__canvas,.visual__mesh-label{display:none}
+ .visual__mobile-wave{display:block;position:absolute;right:-24%;top:16%;width:115%;height:77%;opacity:.82;filter:drop-shadow(0 0 7px #f5c51822)}
+ .visual__mobile-wave-lines{transform-origin:center;animation:mobile-wave-drift 9s ease-in-out infinite alternate}
+ .hero__bottom{z-index:2}
+}
+@media(max-width:475px){
+ .hero{padding-bottom:62px}
+ .visual--mesh{margin:0;height:auto}
+ .visual__mobile-wave{right:-40%;top:21%;width:145%;height:70%;opacity:.72}
+}
+@keyframes mobile-wave-drift{from{transform:translate3d(-12px,-9px,0) rotate(-2deg)}to{transform:translate3d(11px,10px,0) rotate(2deg)}}
+@media(prefers-reduced-motion:reduce){.visual__mobile-wave-lines{animation:none}}

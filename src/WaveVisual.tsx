@@ -143,6 +143,27 @@ export default function WaveVisual() {
   return (
     <div className="visual visual--mesh">
       <canvas ref={canvasRef} className="visual__canvas" aria-hidden="true" />
+      <svg className="visual__mobile-wave" viewBox="0 0 420 420" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <defs>
+          <linearGradient id="mobile-wave-gold" x1="0" y1="0" x2="1" y2="0">
+            <stop stopColor="#f5c518" stopOpacity="0" />
+            <stop offset=".27" stopColor="#f5c518" stopOpacity=".42" />
+            <stop offset=".65" stopColor="#ffe477" stopOpacity=".8" />
+            <stop offset="1" stopColor="#f5c518" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <g className="visual__mobile-wave-lines" fill="none">
+          {Array.from({ length: 24 }, (_, i) => (
+            <path key={i}
+              d={`M -60 ${145 + i * 7} C 60 ${85 + i * 5}, 130 ${285 - i * 3}, 240 ${183 + i * 4} S 365 ${90 + i * 5}, 480 ${165 + i * 4}`}
+              stroke="url(#mobile-wave-gold)" strokeWidth={i % 5 === 0 ? 1.5 : .85}
+              opacity={.3 + i / 45} />
+          ))}
+        </g>
+        <g fill="#f5c518" opacity=".6">
+          <circle cx="110" cy="190" r="1.7"/><circle cx="295" cy="152" r="1.5"/><circle cx="350" cy="260" r="1.4"/>
+        </g>
+      </svg>
       <span className="visual__mesh-label" aria-hidden="true">LIVE CONNECTION / NEXROOM</span>
     </div>
   )
