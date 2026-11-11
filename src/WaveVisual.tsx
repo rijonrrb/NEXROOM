@@ -1,170 +1,139 @@
 import { useEffect, useRef } from 'react'
 
-type Point = { x: number; z: number; phase: number; size: number }
-
 export default function WaveVisual() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const context = canvas.getContext('2d', { alpha: true })
-    if (!context) return
-
-    const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const points: Point[] = []
-    const cols = 67
-    const rows = 33
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        points.push({
-          x: (col / (cols - 1) - 0.5) * 2,
-          z: (row / (rows - 1) - 0.5) * 2,
-          phase: Math.sin(col * 15.31 + row * 6.71) * 0.5,
-          size: (col + row) % 11 === 0 ? 1.5 : 0.82,
-        })
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const mobile = window.matchMedia('(max-width: 760px)')
+    let width = 600, height = 480, frame = 0, raf = 0, running = true
+    let yaw = -0.38, pitch = 0.34, targetYaw = yaw, targetPitch = pitch
+    let dragging = false, prevX = 0, prevY = 0
+    const columns = 58, rows = 40
+    const coords = Array.from({length: columns * rows}, (_, i) => ({
+      x: (i % columns / (columns - 1) - .5) * 2.85,
+      z: (Math.floor(i / columns) / (rows - 1) - .5) * 2.25,
+      jitter: Math.sin(i * 12.9898) * .009
+    }))
+    const onDown = (e: PointerEvent) => {
+      dragging = true; prevX = e.clientX; prevY = e.clientY
+      canvas.setPointerCapture(e.pointerId)
+    }
+    const onMove = (e: PointerEvent) => {
+      if (dragging) {
+        targetYaw += (e.clientX - prevX) * .008
+        targetPitch = Math.max(-.12, Math.min(.95, targetPitch + (e.clientY - prevY) * .006))
+        prevX = e.clientX; prevY = e.clientY
+      } else {
+        const r = canvas.getBoundingClientRect()
+        targetYaw = -.38 + ((e.clientX - r.left) / r.width - .5) * .32
+        targetPitch = .34 + ((e.clientY - r.top) / r.height - .5) * .16
       }
+      if (reduceMotion.matches) draw()
     }
-
-    let width = 1
-    let height = 1
-    let raf = 0
-    let active = true
-    let visible = true
-    let mouseX = 0
-    let mouseY = 0
-    let targetX = 0
-    let targetY = 0
-    let lastFrame = 0
-    const onPointer = (event: PointerEvent) => {
-      const bounds = canvas.getBoundingClientRect()
-      targetX = ((event.clientX - bounds.left) / bounds.width - 0.5) * 2
-      targetY = ((event.clientY - bounds.top) / bounds.height - 0.5) * 2
+    const onUp = () => { dragging = false }
+    const onLeave = () => { if (!dragging) { targetYaw = -.38; targetPitch = .34 } }
+    const onResize = () => {
+      const r = canvas.getBoundingClientRect()
+      width = Math.max(1, r.width); height = Math.max(1, r.height)
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+      canvas.width = Math.round(width * dpr)
+      canvas.height = Math.round(height * dpr)
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      draw()
     }
-    const onPointerLeave = () => { targetX = 0; targetY = 0 }
-    const onVisibility = () => { visible = !document.hidden; if (visible) requestFrame() }
-    const observer = new IntersectionObserver(entries => {
-      active = entries[0]?.isIntersecting ?? false
-      if (active) requestFrame()
-    }, { threshold: 0.02 })
-    const resize = () => {
-      const bounds = canvas.getBoundingClientRect()
-      width = Math.max(1, bounds.width)
-      height = Math.max(1, bounds.height)
-      const ratio = Math.min(window.devicePixelRatio || 1, 2)
-      canvas.width = Math.round(width * ratio)
-      canvas.height = Math.round(height * ratio)
-      context.setTransform(ratio, 0, 0, ratio, 0, 0)
-      requestFrame()
+    const rotate = (x: number, y: number, z: number) => {
+      const cx = x * Math.cos(yaw) + z * Math.sin(yaw)
+      const cz = -x * Math.sin(yaw) + z * Math.cos(yaw)
+      const cy = y * Math.cos(pitch) - cz * Math.sin(pitch)
+      const depth = y * Math.sin(pitch) + cz * Math.cos(pitch)
+      const perspective = 4.9 / (4.9 + depth * .27)
+      const scale = Math.min(width / 4.25, height / 3.75)
+      return { x: width / 2 + cx * scale * perspective, y: height / 2 + cy * scale * perspective, depth }
     }
-    const surface = (x: number, z: number, time: number) => {
-      const ridge = Math.sin(x * 4.1 + time * 0.67) * Math.cos(z * 2.4 - time * 0.39)
-      const detail = Math.sin(x * 7.3 - z * 3.6 + time * 0.48) * 0.11
-      const envelope = Math.max(0.18, 1 - Math.pow(Math.abs(x), 2.2) * 0.48)
-      return (ridge * 0.38 + detail) * envelope
-    }
-    const project = (x: number, z: number, y: number) => {
-      const yaw = -0.23 + mouseX * 0.12
-      const rotatedX = x * Math.cos(yaw) - z * Math.sin(yaw)
-      const rotatedZ = x * Math.sin(yaw) + z * Math.cos(yaw)
-      const tilt = 0.54 + mouseY * 0.06
-      const depth = rotatedZ * Math.cos(tilt) - y * Math.sin(tilt)
-      const elevation = rotatedZ * Math.sin(tilt) + y * Math.cos(tilt)
-      const perspective = 3.8 / (3.8 + depth * 0.29)
-      const scale = Math.min(width * 0.49, height * 0.68)
-      return { x: width * 0.5 + rotatedX * scale * perspective, y: height * 0.52 + elevation * scale * perspective, depth }
-    }
-    const render = (timestamp: number) => {
-      raf = 0
-      if (!active || !visible) return
-      if (timestamp - lastFrame < 32 && !motionPreference.matches) { requestFrame(); return }
-      lastFrame = timestamp
-      const time = motionPreference.matches ? 1.6 : timestamp * 0.001
-      mouseX += (targetX - mouseX) * 0.035
-      mouseY += (targetY - mouseY) * 0.035
-      context.clearRect(0, 0, width, height)
-
-      const projected = points.map(p => {
-        const y = surface(p.x, p.z, time) + p.phase * 0.012
-        return { ...project(p.x, p.z, y), size: p.size, y }
+    const wave = (x: number, z: number, t: number) =>
+      .43 * Math.sin(x * 2.45 - t * .72) * Math.cos(z * 2.4 + t * .36)
+      + .17 * Math.sin(x * 4.3 + z * 2.2 + t * .57)
+    const draw = () => {
+      if (mobile.matches) return
+      yaw += (targetYaw - yaw) * .11
+      pitch += (targetPitch - pitch) * .11
+      const t = reduceMotion.matches ? 2 : frame / 42
+      ctx.clearRect(0, 0, width, height)
+      const corners = [
+        [-1.53,-.88,-1.24],[1.53,-.88,-1.24],[1.53,-.88,1.24],[-1.53,-.88,1.24],
+        [-1.53,.88,-1.24],[1.53,.88,-1.24],[1.53,.88,1.24],[-1.53,.88,1.24]
+      ].map(p => rotate(p[0],p[1],p[2]))
+      const edge = (a: number, b: number, opacity: number) => {
+        ctx.beginPath(); ctx.moveTo(corners[a].x,corners[a].y);ctx.lineTo(corners[b].x,corners[b].y)
+        ctx.strokeStyle = 'rgba(245,197,24,'+opacity+')';ctx.lineWidth = 1;ctx.stroke()
+      }
+      ;[[0,1],[1,2],[2,3],[3,0],[0,4],[1,5],[2,6],[3,7],[4,5],[5,6],[6,7],[7,4]]
+        .forEach(([a,b])=>edge(a,b,.16))
+      const pts = coords.map(p => {
+        const h = wave(p.x,p.z,t) + p.jitter
+        return {...rotate(p.x,h,p.z), h}
       })
-      context.save()
-      context.globalCompositeOperation = 'screen'
-      for (let row = 0; row < rows; row++) {
-        context.beginPath()
-        for (let col = 0; col < cols; col++) {
-          const p = projected[row * cols + col]
-          if (col === 0) context.moveTo(p.x, p.y)
-          else context.lineTo(p.x, p.y)
+      ctx.globalCompositeOperation = 'screen'
+      for(let r=0;r<rows;r+=2){
+        ctx.beginPath()
+        for(let c=0;c<columns;c++){
+          const p=pts[r*columns+c]
+          if(c===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y)
         }
-        context.strokeStyle = row % 4 === 0 ? 'rgba(245,197,24,0.27)' : 'rgba(245,197,24,0.105)'
-        context.lineWidth = row % 4 === 0 ? 0.75 : 0.42
-        context.stroke()
+        ctx.strokeStyle='rgba(245,197,24,.18)';ctx.lineWidth=.65;ctx.stroke()
       }
-      for (let col = 0; col < cols; col += 2) {
-        context.beginPath()
-        for (let row = 0; row < rows; row++) {
-          const p = projected[row * cols + col]
-          if (row === 0) context.moveTo(p.x, p.y)
-          else context.lineTo(p.x, p.y)
+      for(let c=0;c<columns;c+=3){
+        ctx.beginPath()
+        for(let r=0;r<rows;r++){
+          const p=pts[r*columns+c]
+          if(r===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y)
         }
-        context.strokeStyle = 'rgba(255,212,63,0.105)'
-        context.lineWidth = 0.5
-        context.stroke()
+        ctx.strokeStyle='rgba(245,197,24,.12)';ctx.lineWidth=.6;ctx.stroke()
       }
-      for (const p of projected) {
-        const brightness = Math.max(0.12, Math.min(1, 0.52 + p.y * 0.001 + p.depth * -0.11))
-        context.fillStyle = 'rgba(255,206,48,' + (brightness * 0.77).toFixed(3) + ')'
-        context.beginPath()
-        context.arc(p.x, p.y, p.size * (0.68 + brightness * 0.44), 0, Math.PI * 2)
-        context.fill()
-      }
-      context.restore()
-      if (!motionPreference.matches) requestFrame()
+      pts.forEach((p,i)=>{
+        const light=Math.max(.25,Math.min(1,.72 + p.h*.38 - p.depth*.11))
+        ctx.fillStyle='rgba(255,211,62,'+(.5*light+.16)+')'
+        ctx.beginPath();ctx.arc(p.x,p.y,i%13===0?1.65:1.05,0,Math.PI*2);ctx.fill()
+      })
+      ctx.globalCompositeOperation='source-over'
+      if (!reduceMotion.matches && running) {frame++;raf=requestAnimationFrame(draw)}
     }
-    const requestFrame = () => { if (!raf && active && visible) raf = requestAnimationFrame(render) }
-    const resizeObserver = new ResizeObserver(resize)
-    resizeObserver.observe(canvas)
+    const observer = new ResizeObserver(onResize)
     observer.observe(canvas)
-    canvas.addEventListener('pointermove', onPointer)
-    canvas.addEventListener('pointerleave', onPointerLeave)
-    document.addEventListener('visibilitychange', onVisibility)
-    resize()
+    canvas.addEventListener('pointerdown',onDown)
+    canvas.addEventListener('pointermove',onMove)
+    canvas.addEventListener('pointerup',onUp)
+    canvas.addEventListener('pointercancel',onUp)
+    canvas.addEventListener('pointerleave',onLeave)
+    const visibility = () => {running=!document.hidden;if(running){cancelAnimationFrame(raf);raf=requestAnimationFrame(draw)}}
+    document.addEventListener('visibilitychange',visibility)
+    onResize()
     return () => {
-      cancelAnimationFrame(raf)
-      resizeObserver.disconnect()
-      observer.disconnect()
-      canvas.removeEventListener('pointermove', onPointer)
-      canvas.removeEventListener('pointerleave', onPointerLeave)
-      document.removeEventListener('visibilitychange', onVisibility)
+      running=false;cancelAnimationFrame(raf);observer.disconnect()
+      canvas.removeEventListener('pointerdown',onDown)
+      canvas.removeEventListener('pointermove',onMove)
+      canvas.removeEventListener('pointerup',onUp)
+      canvas.removeEventListener('pointercancel',onUp)
+      canvas.removeEventListener('pointerleave',onLeave)
+      document.removeEventListener('visibilitychange',visibility)
     }
   }, [])
 
-  return (
-    <div className="visual visual--mesh">
-      <canvas ref={canvasRef} className="visual__canvas" aria-hidden="true" />
-      <svg className="visual__mobile-wave" viewBox="0 0 420 420" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-        <defs>
-          <linearGradient id="mobile-wave-gold" x1="0" y1="0" x2="1" y2="0">
-            <stop stopColor="#f5c518" stopOpacity="0" />
-            <stop offset=".27" stopColor="#f5c518" stopOpacity=".42" />
-            <stop offset=".65" stopColor="#ffe477" stopOpacity=".8" />
-            <stop offset="1" stopColor="#f5c518" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <g className="visual__mobile-wave-lines" fill="none">
-          {Array.from({ length: 24 }, (_, i) => (
-            <path key={i}
-              d={`M -60 ${145 + i * 7} C 60 ${85 + i * 5}, 130 ${285 - i * 3}, 240 ${183 + i * 4} S 365 ${90 + i * 5}, 480 ${165 + i * 4}`}
-              stroke="url(#mobile-wave-gold)" strokeWidth={i % 5 === 0 ? 1.5 : .85}
-              opacity={.3 + i / 45} />
-          ))}
-        </g>
-        <g fill="#f5c518" opacity=".6">
-          <circle cx="110" cy="190" r="1.7"/><circle cx="295" cy="152" r="1.5"/><circle cx="350" cy="260" r="1.4"/>
-        </g>
-      </svg>
-      <span className="visual__mesh-label" aria-hidden="true">LIVE CONNECTION / NEXROOM</span>
+  return <div className="visual visual--mesh">
+    <div className="visual__desktop-stage">
+      <canvas ref={canvasRef} className="visual__canvas" aria-label="Interactive 3D particle wave. Drag to rotate the wave and its frame." />
+      <span className="visual__drag-hint">DRAG TO ROTATE / INTERACTIVE FIELD</span>
     </div>
-  )
+    <svg className="visual__mobile-wave" viewBox="0 0 420 420" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <defs><linearGradient id="mobile-wave-gold" x1="0" y1="0" x2="1" y2="0"><stop stopColor="#f5c518" stopOpacity="0"/><stop offset=".27" stopColor="#f5c518" stopOpacity=".42"/><stop offset=".65" stopColor="#ffe477" stopOpacity=".8"/><stop offset="1" stopColor="#f5c518" stopOpacity="0"/></linearGradient></defs>
+      <g className="visual__mobile-wave-lines" fill="none">
+        {Array.from({length:24},(_,i)=><path key={i} d={`M -60 ${145+i*7} C 60 ${85+i*5}, 130 ${285-i*3}, 240 ${183+i*4} S 365 ${90+i*5}, 480 ${165+i*4}`} stroke="url(#mobile-wave-gold)" strokeWidth={i%5===0?1.5:.85} opacity={.3+i/45}/>)}
+      </g>
+    </svg>
+  </div>
 }
