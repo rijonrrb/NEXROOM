@@ -55,6 +55,8 @@ const features = [
   { number: '04', icon: FileUp, title: 'Share what matters', copy: 'Bring images and project files into the same temporary workspace.' },
 ]
 
+const COPYRIGHT_YEAR = new Date().getFullYear()
+
 function App() {
   const [modal, setModal] = useState<ModalMode>(null)
   const [navOpen, setNavOpen] = useState(false)
@@ -147,7 +149,7 @@ function App() {
         </section>
       </main>
 
-      <footer className="footer"><div className="shell footer__inner"><a className="brand brand--footer" href="#home"><Mark small/><span><b>NEX</b>ROOM<span className="brand__dot">.</span></span></a><span>REAL PEOPLE. REAL CONVERSATIONS.</span><span>© {new Date().getFullYear()} NEXROOM</span></div></footer>
+      <footer className="footer"><div className="shell footer__inner"><a className="brand brand--footer" href="#home"><Mark small/><span><b>NEX</b>ROOM<span className="brand__dot">.</span></span></a><span>REAL PEOPLE. REAL CONVERSATIONS.</span><span>© {COPYRIGHT_YEAR} NEXROOM</span></div></footer>
 
       {modal && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setModal(null) }}>
         <section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-heading">
