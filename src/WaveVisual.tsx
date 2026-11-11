@@ -13,11 +13,11 @@ export default function WaveVisual() {
     let width = 600, height = 480, frame = 0, raf = 0, running = true
     let yaw = -0.38, pitch = 0.34, targetYaw = yaw, targetPitch = pitch
     let dragging = false, prevX = 0, prevY = 0
-    const columns = 58, rows = 40
+    const columns = 70, rows = 44
     const coords = Array.from({length: columns * rows}, (_, i) => ({
-      x: (i % columns / (columns - 1) - .5) * 2.85,
-      z: (Math.floor(i / columns) / (rows - 1) - .5) * 2.25,
-      jitter: Math.sin(i * 12.9898) * .009
+      x: (i % columns / (columns - 1) - .5) * 3.75,
+      z: (Math.floor(i / columns) / (rows - 1) - .5) * 2.9,
+      jitter: Math.sin(i * 12.9898) * .028
     }))
     const onDown = (e: PointerEvent) => {
       dragging = true; prevX = e.clientX; prevY = e.clientY
@@ -58,6 +58,7 @@ export default function WaveVisual() {
     const wave = (x: number, z: number, t: number) =>
       .43 * Math.sin(x * 2.45 - t * .72) * Math.cos(z * 2.4 + t * .36)
       + .17 * Math.sin(x * 4.3 + z * 2.2 + t * .57)
+      + .035 * Math.sin(x * 12.2 - z * 9.1 + t * 1.2)
     const draw = () => {
       if (mobile.matches) return
       yaw += (targetYaw - yaw) * .11
@@ -65,8 +66,8 @@ export default function WaveVisual() {
       const t = reduceMotion.matches ? 2 : frame / 42
       ctx.clearRect(0, 0, width, height)
       const corners = [
-        [-1.53,-.88,-1.24],[1.53,-.88,-1.24],[1.53,-.88,1.24],[-1.53,-.88,1.24],
-        [-1.53,.88,-1.24],[1.53,.88,-1.24],[1.53,.88,1.24],[-1.53,.88,1.24]
+        [-1.22,-.73,-1.02],[1.22,-.73,-1.02],[1.22,-.73,1.02],[-1.22,-.73,1.02],
+        [-1.22,.73,-1.02],[1.22,.73,-1.02],[1.22,.73,1.02],[-1.22,.73,1.02]
       ].map(p => rotate(p[0],p[1],p[2]))
       const edge = (a: number, b: number, opacity: number) => {
         ctx.beginPath(); ctx.moveTo(corners[a].x,corners[a].y);ctx.lineTo(corners[b].x,corners[b].y)
@@ -85,7 +86,7 @@ export default function WaveVisual() {
           const p=pts[r*columns+c]
           if(c===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y)
         }
-        ctx.strokeStyle='rgba(245,197,24,.18)';ctx.lineWidth=.65;ctx.stroke()
+        ctx.strokeStyle='rgba(245,197,24,.10)';ctx.lineWidth=.65;ctx.stroke()
       }
       for(let c=0;c<columns;c+=3){
         ctx.beginPath()
@@ -93,14 +94,23 @@ export default function WaveVisual() {
           const p=pts[r*columns+c]
           if(r===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y)
         }
-        ctx.strokeStyle='rgba(245,197,24,.12)';ctx.lineWidth=.6;ctx.stroke()
+        ctx.strokeStyle='rgba(245,197,24,.075)';ctx.lineWidth=.6;ctx.stroke()
       }
       pts.forEach((p,i)=>{
-        const light=Math.max(.25,Math.min(1,.72 + p.h*.38 - p.depth*.11))
+        const light=Math.max(.18,Math.min(1,.72 + p.h*.38 - p.depth*.11))
         ctx.fillStyle='rgba(255,211,62,'+(.5*light+.16)+')'
-        ctx.beginPath();ctx.arc(p.x,p.y,i%13===0?1.65:1.05,0,Math.PI*2);ctx.fill()
+        ctx.beginPath();ctx.arc(p.x,p.y,i%13===0?1.5:.95,0,Math.PI*2);ctx.fill()
       })
       ctx.globalCompositeOperation='source-over'
+      // Tiny scattered particles make the signal feel alive beyond the wireframe.
+      for (let i=0;i<95;i++) {
+        const x=Math.sin(i*19.13)*1.9
+        const z=Math.cos(i*7.91)*1.47
+        const y=Math.sin(i*11.3+t*.48)*.95
+        const q=rotate(x,y,z)
+        ctx.fillStyle='rgba(245,197,24,'+(.08+.22*(.5+.5*Math.sin(t*.7+i)))+')'
+        ctx.beginPath();ctx.arc(q.x,q.y,i%7===0?1.4:.75,0,Math.PI*2);ctx.fill()
+      }
       if (!reduceMotion.matches && running) {frame++;raf=requestAnimationFrame(draw)}
     }
     const observer = new ResizeObserver(onResize)
@@ -127,7 +137,11 @@ export default function WaveVisual() {
   return <div className="visual visual--mesh">
     <div className="visual__desktop-stage">
       <canvas ref={canvasRef} className="visual__canvas" aria-label="Interactive 3D particle wave. Drag to rotate the wave and its frame." />
-      <span className="visual__drag-hint">DRAG TO ROTATE / INTERACTIVE FIELD</span>
+      <span className="visual__signal-label" aria-hidden="true">VOICE · VIDEO · CONNECT</span>
+      <span className="visual__ornament visual__ornament--plus" aria-hidden="true">+</span>
+      <span className="visual__ornament visual__ornament--corner" aria-hidden="true">⌜</span>
+      <span className="visual__ornament visual__ornament--dots" aria-hidden="true">· · ·</span>
+      <span className="visual__ornament visual__ornament--arrow" aria-hidden="true">↗</span>
     </div>
     <svg className="visual__mobile-wave" viewBox="0 0 420 420" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
       <defs><linearGradient id="mobile-wave-gold" x1="0" y1="0" x2="1" y2="0"><stop stopColor="#f5c518" stopOpacity="0"/><stop offset=".27" stopColor="#f5c518" stopOpacity=".42"/><stop offset=".65" stopColor="#ffe477" stopOpacity=".8"/><stop offset="1" stopColor="#f5c518" stopOpacity="0"/></linearGradient></defs>
