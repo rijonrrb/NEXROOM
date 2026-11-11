@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { ArrowDownRight, ArrowRight, ArrowUpRight, Camera, Check, FileUp, Fingerprint, Link2, LockKeyhole, Menu, MessageSquare, MonitorUp, ShieldCheck, Video, X } from 'lucide-react'
 import './App.css'
+import WaveVisual from './WaveVisual'
 
 type ModalMode = 'create' | 'join' | null
 
@@ -8,45 +9,6 @@ function Mark({ small = false }: { small?: boolean }) {
   return <span className={small ? 'mark mark--small' : 'mark'} aria-hidden="true"><i /><i /></span>
 }
 
-function WaveVisual() {
-  return (
-    <div className="visual" aria-hidden="true">
-      <div className="visual__grid" />
-      <div className="visual__orbit visual__orbit--one" />
-      <div className="visual__orbit visual__orbit--two" />
-      <svg className="wave" viewBox="0 0 660 450" preserveAspectRatio="xMidYMid meet">
-        <defs>
-          <linearGradient id="wave-gradient" x1="0" y1="0" x2="1" y2="0">
-            <stop stopColor="#f5c518" stopOpacity="0" />
-            <stop offset=".36" stopColor="#f5c518" stopOpacity=".9" />
-            <stop offset=".68" stopColor="#fff0a1" stopOpacity=".95" />
-            <stop offset="1" stopColor="#f5c518" stopOpacity="0" />
-          </linearGradient>
-          <filter id="wave-glow"><feGaussianBlur stdDeviation="7" /></filter>
-        </defs>
-        <g transform="translate(0,3)">
-          {Array.from({length: 34}, (_, i) => {
-            const y = 128 + i * 5.8
-            const amp = 41 + Math.sin(i / 6) * 23
-            return <path key={i} d={"M -30 " + (y + 18) + " C 120 " + (y - 75 + amp) + ", 160 " + (y + 128 - amp) + ", 310 " + (y + 10) + " S 510 " + (y - 94 + amp) + ", 690 " + (y - 12)} fill="none" stroke="url(#wave-gradient)" strokeWidth={i % 6 === 0 ? 1.35 : .65} strokeOpacity={.18 + (i / 34) * .42} />
-          })}
-          <path d="M-20 255 C170 102 203 332 358 199 S550 177 679 125" fill="none" stroke="#f5c518" strokeWidth="7" strokeOpacity=".45" filter="url(#wave-glow)" />
-          <path d="M-20 255 C170 102 203 332 358 199 S550 177 679 125" fill="none" stroke="#ffe375" strokeWidth="1.7" />
-        </g>
-        <g fill="#f5c518">
-          <circle cx="120" cy="118" r="2" opacity=".8"/><circle cx="438" cy="105" r="2" opacity=".6"/><circle cx="565" cy="309" r="2" opacity=".7"/>
-        </g>
-      </svg>
-      <div className="visual__center">
-        <span className="visual__center-icon"><Video size={32} strokeWidth={1.65}/></span>
-        <span>ONE LINK. ONE SPACE.</span>
-      </div>
-      <span className="visual__cross visual__cross--one">+</span>
-      <span className="visual__cross visual__cross--two">+</span>
-      <div className="visual__label">CONNECTION / REIMAGINED</div>
-    </div>
-  )
-}
 
 const features = [
   { number: '01', icon: Video, title: 'Video & audio', copy: 'A focused space for face-to-face conversations, with the controls right where you need them.' },
