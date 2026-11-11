@@ -1,0 +1,78 @@
+name: NEXROOM CI and production deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexroom-production-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck and build
+        run: npm run build
+      - name: Verify output
+        run: |
+          test -s dist/index.html
+          test -d dist/assets
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies and build
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Check dedicated NEXROOM FTPS account
+        id: ftps
+        env:
+          FTP_USER: ${{ secrets.NEXROOM_FTPS_USERNAME }}
+          FTP_PASS: ${{ secrets.NEXROOM_FTPS_PASSWORD }}
+        run: |
+          if [ -n "$FTP_USER" ] && [ -n "$FTP_PASS" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::NEXROOM FTPS secrets are missing; deployment skipped. Build has been verified."
+          fi
+      - name: Deploy static NEXROOM frontend only
+        if: steps.ftps.outputs.ready == 'true'
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: nova.hostseba.com
+          username: ${{ secrets.NEXROOM_FTPS_USERNAME }}
+          password: ${{ secrets.NEXROOM_FTPS_PASSWORD }}
+          protocol: ftps
+          port: 21
+          local-dir: ./dist/
+          server-dir: ./
+          security: strict
+          dangerous-clean-slate: false
