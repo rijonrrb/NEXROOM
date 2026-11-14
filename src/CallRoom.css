@@ -33,3 +33,8 @@
 .callroom--fullscreen .callroom__remote--pip{top:calc(env(safe-area-inset-top,0px) + 80px);bottom:auto;right:12px}
 .callroom--fullscreen .callroom__error{position:absolute;z-index:6;top:72px;left:8px;right:8px}
 @media(max-width:650px){.callroom__controls{gap:7px;padding:10px;margin:0 8px 8px}.callroom__controls button{width:44px;height:44px}.callroom__remote--pip{width:min(34vw,180px);right:10px;bottom:10px}.callroom__self--main{inset:0;width:100%;height:100%}.callroom--fullscreen .callroom__controls{gap:6px;padding:8px}.callroom--fullscreen .callroom__controls button{width:42px;height:42px}}
+.callroom__self.callroom__self--mirrored,.callroom__remote.callroom__remote--mirrored{transform:scaleX(-1)}
+.callroom__controls{transition:transform .32s cubic-bezier(.2,.75,.25,1),opacity .22s ease;will-change:transform,opacity}
+.callroom--controls-hidden .callroom__controls{transform:translateY(calc(100% + 24px));opacity:0;pointer-events:none}
+.callroom--fullscreen.callroom--controls-hidden .callroom__controls{transform:translate(-50%,calc(100% + 24px))}
+@media(prefers-reduced-motion:reduce){.callroom__controls{transition-duration:.01ms}}

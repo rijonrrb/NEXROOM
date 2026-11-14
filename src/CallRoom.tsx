@@ -68,8 +68,48 @@ export default function CallRoom({ roomId, onLeave }: { roomId: string; onLeave:
   const [selfPrimary, setSelfPrimary] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [cameraFacing, setCameraFacing] = useState<'user' | 'environment'>('user')
+  const [remoteCameraFacing, setRemoteCameraFacing] = useState<'user' | 'environment' | null>(null)
   const [switchingCamera, setSwitchingCamera] = useState(false)
+  const [controlsVisible, setControlsVisible] = useState(true)
   const callRoom = useRef<HTMLElement>(null)
+  const controlsTimer = useRef<number | null>(null)
+  const mediaStateChannel = useRef<RTCDataChannel | null>(null)
+  const cameraFacingRef = useRef<'user' | 'environment'>('user')
+
+  const sendCameraFacing = (facing: 'user' | 'environment') => {
+    const channel = mediaStateChannel.current
+    if (channel?.readyState !== 'open') return
+    try {
+      channel.send(JSON.stringify({ type: 'camera-facing', facing }))
+    } catch (sendError) {
+      console.warn('Could not send camera orientation', sendError)
+    }
+  }
+
+  const updateCameraFacing = (facing: 'user' | 'environment') => {
+    cameraFacingRef.current = facing
+    setCameraFacing(facing)
+    sendCameraFacing(facing)
+  }
+
+  const revealControls = () => {
+    setControlsVisible(true)
+    if (controlsTimer.current !== null) window.clearTimeout(controlsTimer.current)
+    controlsTimer.current = window.setTimeout(() => {
+      setControlsVisible(false)
+      controlsTimer.current = null
+    }, 3500)
+  }
+
+  useEffect(() => {
+    controlsTimer.current = window.setTimeout(() => {
+      setControlsVisible(false)
+      controlsTimer.current = null
+    }, 3500)
+    return () => {
+      if (controlsTimer.current !== null) window.clearTimeout(controlsTimer.current)
+    }
+  }, [])
 
   useEffect(() => {
     const handleFullscreenChange = () => setFullscreen(Boolean(document.fullscreenElement))
@@ -110,14 +150,23 @@ export default function CallRoom({ roomId, onLeave }: { roomId: string; onLeave:
     const closePeer = () => {
       if (disconnectedTimer) window.clearTimeout(disconnectedTimer)
       disconnectedTimer = 0
+      if (mediaStateChannel.current) {
+        mediaStateChannel.current.onopen = null
+        mediaStateChannel.current.onmessage = null
+        mediaStateChannel.current.onclose = null
+        mediaStateChannel.current.close()
+        mediaStateChannel.current = null
+      }
       if (peer) {
         peer.onicecandidate = null
         peer.ontrack = null
+        peer.ondatachannel = null
         peer.onnegotiationneeded = null
         peer.oniceconnectionstatechange = null
         peer.onconnectionstatechange = null
         peer.close()
       }
+      setRemoteCameraFacing(null)
       peer = null
       pcRef.current = null
       pendingIce = []
@@ -155,6 +204,40 @@ export default function CallRoom({ roomId, onLeave }: { roomId: string; onLeave:
       peer = connection
       pcRef.current = connection
       polite = localPeerId.localeCompare(remotePeerId) > 0
+
+      const handleMediaStateChannel = (channel: RTCDataChannel) => {
+        mediaStateChannel.current = channel
+        channel.onopen = () => sendCameraFacing(cameraFacingRef.current)
+        channel.onmessage = event => {
+          if (typeof event.data !== 'string' || event.data.length > 128) return
+          try {
+            const message = JSON.parse(event.data)
+            if (message?.type === 'camera-facing' && (message.facing === 'user' || message.facing === 'environment')) {
+              setRemoteCameraFacing(message.facing)
+            }
+          } catch {
+            // Ignore malformed peer metadata.
+          }
+        }
+        channel.onclose = () => {
+          if (mediaStateChannel.current === channel) {
+            mediaStateChannel.current = null
+            setRemoteCameraFacing(null)
+          }
+        }
+      }
+
+      if (!polite) connection.ondatachannel = event => handleMediaStateChannel(event.channel)
+
+      const createMediaStateChannel = () => {
+        if (!polite || mediaStateChannel.current || connection.connectionState !== 'connected') return
+        try {
+          handleMediaStateChannel(connection.createDataChannel('camera-state'))
+        } catch (channelError) {
+          console.warn('Could not exchange camera orientation metadata', channelError)
+        }
+      }
+
       for (const track of localStream.getTracks()) {
         const sender = connection.addTrack(track, localStream)
         if (track.kind === 'video') {
@@ -187,6 +270,7 @@ export default function CallRoom({ roomId, onLeave }: { roomId: string; onLeave:
       }
       connection.oniceconnectionstatechange = () => {
         if (connection.iceConnectionState === 'connected' || connection.iceConnectionState === 'completed') {
+          createMediaStateChannel()
           if (disconnectedTimer) window.clearTimeout(disconnectedTimer)
           disconnectedTimer = 0
           restartAttempts = 0
@@ -210,6 +294,7 @@ export default function CallRoom({ roomId, onLeave }: { roomId: string; onLeave:
       }
       connection.onconnectionstatechange = () => {
         if (connection.connectionState === 'connected') {
+          createMediaStateChannel()
           setConnected(true)
           setStatus('Connected')
         } else if (connection.connectionState === 'failed') {
@@ -362,7 +447,7 @@ export default function CallRoom({ roomId, onLeave }: { roomId: string; onLeave:
         setHasAudio(media.getAudioTracks().length > 0)
         setHasCamera(media.getVideoTracks().length > 0)
         const capturedFacingMode = media.getVideoTracks()[0]?.getSettings().facingMode
-        setCameraFacing(capturedFacingMode === 'environment' ? 'environment' : 'user')
+        updateCameraFacing(capturedFacingMode === 'environment' ? 'environment' : 'user')
         for (const track of media.getVideoTracks()) track.contentHint = 'motion'
         if (localVideo.current) localVideo.current.srcObject = media
         setStatus('Connecting to signaling…')
@@ -430,7 +515,7 @@ export default function CallRoom({ roomId, onLeave }: { roomId: string; onLeave:
         if (currentTrack.getSettings().facingMode === nextFacing) {
           currentTrack.contentHint = 'motion'
           if (sender) configureVideoSender(sender)
-          setCameraFacing(nextFacing)
+          updateCameraFacing(nextFacing)
           setCameraOff(false)
           return
         }
@@ -468,7 +553,7 @@ export default function CallRoom({ roomId, onLeave }: { roomId: string; onLeave:
         void localVideo.current.play().catch(() => {})
       }
       setHasCamera(true)
-      setCameraFacing(nextFacing)
+      updateCameraFacing(nextFacing)
       setCameraOff(false)
     } catch {
       nextStream?.getTracks().forEach(track => track.stop())
@@ -530,17 +615,17 @@ export default function CallRoom({ roomId, onLeave }: { roomId: string; onLeave:
     void remoteVideo.current.play().then(() => setNeedsPlayback(false)).catch(() => setNeedsPlayback(true))
   }
 
-  return <main ref={callRoom} className={`callroom${fullscreen ? ' callroom--fullscreen' : ''}`}>
+  return <main ref={callRoom} onPointerMove={revealControls} onPointerDown={revealControls} onKeyDown={revealControls} className={`callroom${fullscreen ? ' callroom--fullscreen' : ''}${controlsVisible ? '' : ' callroom--controls-hidden'}`}>
     <header className="callroom__header"><b>NEX<span>ROOM</span>.</b><div><span className="callroom__status">{connected ? '● LIVE' : '○ ' + status}</span><button onClick={copyInvite} className="callroom__invite"><Copy size={16}/>{copied ? 'COPIED' : 'COPY INVITE'}</button></div></header>
     <div className="callroom__stage">
-      <video ref={remoteVideo} autoPlay playsInline aria-label="Remote participant video" className={`callroom__remote${selfPrimary ? ' callroom__remote--pip' : ''}`}/>
+      <video ref={remoteVideo} autoPlay playsInline aria-label="Remote participant video" className={`callroom__remote${remoteCameraFacing === 'user' ? ' callroom__remote--mirrored' : ''}${selfPrimary ? ' callroom__remote--pip' : ''}`}/>
       {needsPlayback && <button className="callroom__play" onClick={enablePlayback}>TAP TO ENABLE AUDIO / VIDEO</button>}
       {!connected && <div className="callroom__waiting"><Video size={42}/><h1>YOUR PRIVATE ROOM</h1><p>{status}</p><small>Share your invite link to start a one-to-one call.</small></div>}
-      <video ref={localVideo} autoPlay playsInline muted aria-label="Your video" className={`callroom__self${selfPrimary ? ' callroom__self--main' : ''}`}/>
+      <video ref={localVideo} autoPlay playsInline muted aria-label="Your video" className={`callroom__self${cameraFacing === 'user' ? ' callroom__self--mirrored' : ''}${selfPrimary ? ' callroom__self--main' : ''}`}/>
     </div>
     {error && <p role="alert" className="callroom__error">{error}</p>}
     {mediaRetryAvailable && <button className="callroom__media-retry" onClick={() => retryMediaRef.current()}>ALLOW MICROPHONE AND TRY AGAIN</button>}
-    <div className="callroom__controls">
+    <div className="callroom__controls" aria-hidden={!controlsVisible} inert={!controlsVisible}>
       <button onClick={toggleMic} disabled={!hasAudio} aria-label={muted ? 'Unmute' : 'Mute'}>{muted ? <MicOff/> : <Mic/>}</button>
       <button onClick={toggleCamera} disabled={audioOnly || !hasCamera} aria-label={cameraOff ? 'Turn camera on' : 'Turn camera off'} title={cameraOff ? 'Turn camera on' : 'Turn camera off'}>{cameraOff ? <CameraOff/> : <Camera/>}</button>
       <button onClick={switchCamera} disabled={!hasCamera || switchingCamera} aria-label={cameraFacing === 'user' ? 'Switch to back camera' : 'Switch to front camera'} title={cameraFacing === 'user' ? 'Switch to back camera' : 'Switch to front camera'}><RefreshCw/></button>
