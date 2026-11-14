@@ -19,6 +19,7 @@ export default function CallRoom({roomId, onLeave}:{roomId:string;onLeave:()=>vo
   const [cameraOff,setCameraOff] = useState(false)
   const [copied,setCopied] = useState(false)
   const [connected,setConnected] = useState(false)
+  const [audioOnly,setAudioOnly] = useState(false)
 
   useEffect(()=>{
     let cancelled=false
@@ -43,7 +44,16 @@ export default function CallRoom({roomId, onLeave}:{roomId:string;onLeave:()=>vo
     }
     const start=async()=>{
       try{
-        const media=await navigator.mediaDevices.getUserMedia({audio:true,video:true})
+        let media: MediaStream
+        try {
+          media=await navigator.mediaDevices.getUserMedia({audio:true,video:true})
+        } catch (cameraError) {
+          // A missing/blocked camera should not prevent a voice-only conversation.
+          console.warn('Camera unavailable, trying audio-only',cameraError)
+          media=await navigator.mediaDevices.getUserMedia({audio:true,video:false})
+          setAudioOnly(true)
+          setCameraOff(true)
+        }
         if(cancelled){media.getTracks().forEach(t=>t.stop());return}
         streamRef.current=media
         if(localVideo.current)localVideo.current.srcObject=media
@@ -104,6 +114,7 @@ export default function CallRoom({roomId, onLeave}:{roomId:string;onLeave:()=>vo
   }
   const toggleCamera=()=>{
     const tracks=streamRef.current?.getVideoTracks()||[]
+    if(!tracks.length){setError('No camera is available in this call. Voice is still supported.');return}
     tracks.forEach(t=>t.enabled=cameraOff)
     setCameraOff(!cameraOff)
   }
@@ -121,7 +132,7 @@ export default function CallRoom({roomId, onLeave}:{roomId:string;onLeave:()=>vo
     {error&&<p role="alert" className="callroom__error">{error}</p>}
     <div className="callroom__controls">
       <button onClick={toggleMic} aria-label={muted?'Unmute':'Mute'}>{muted?<MicOff/>:<Mic/>}</button>
-      <button onClick={toggleCamera} aria-label={cameraOff?'Turn camera on':'Turn camera off'}>{cameraOff?<CameraOff/>:<Camera/>}</button>
+      <button onClick={toggleCamera} disabled={audioOnly} aria-label={cameraOff?'Turn camera on':'Turn camera off'}>{cameraOff?<CameraOff/>:<Camera/>}</button>
       <button onClick={onLeave} className="callroom__hangup" aria-label="Leave call"><PhoneOff/></button>
     </div>
   </main>
