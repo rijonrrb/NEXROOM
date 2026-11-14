@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:signaling": "node signaling/smoke-test.mjs",
+    "test:browser": "node signaling/browser-test.mjs",
+    "test": "npm run test:signaling && npm run test:browser"
   },
   "dependencies": {
     "lucide-react": "^1.72.0",
@@ -20,6 +23,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "oxlint": "^1.90.0",
+    "playwright": "^1.65.1",
     "typescript": "~7.0.2",
     "vite": "^8.3.6"
   }

@@ -30,7 +30,7 @@ function App() {
   const [notice, setNotice] = useState('')
   const [activeRoom,setActiveRoom] = useState<string|null>(() => {
     const id=new URLSearchParams(window.location.search).get('room')
-    return id && /^[a-zA-Z0-9_-]{12,80}$/.test(id) ? id : null
+    return id && /^[a-zA-Z0-9_-]{24,80}$/.test(id) ? id : null
   })
   const enterRoom=(id:string)=>{
     window.history.pushState({},'', '/?room='+encodeURIComponent(id))
@@ -64,7 +64,7 @@ function App() {
     }else{
       let value=invite.trim()
       try { value=new URL(value).searchParams.get('room')||value } catch { /* room code */ }
-      if(!/^[a-zA-Z0-9_-]{12,80}$/.test(value)){setNotice('Enter a valid NEXROOM invite URL or room code.');return}
+      if(!/^[a-zA-Z0-9_-]{24,80}$/.test(value)){setNotice('Enter a valid NEXROOM invite URL or room code.');return}
       enterRoom(value)
     }
   }
@@ -124,7 +124,7 @@ function App() {
           </div>
         </section>
 
-        <section id="privacy" className="privacy shell">
+        <section className="privacy shell">
           <div className="privacy__icon"><Fingerprint size={58} strokeWidth={1}/></div>
           <div className="privacy__body"><p className="eyebrow"><span className="eyebrow__slash">/</span> PRIVACY BY DESIGN</p><h2>YOUR CONVERSATIONS.<br /><em>YOUR CONTROL.</em></h2><p>NEXROOM is being designed around private, encrypted communication and temporary sessions. No permanent chat archive or personal profile is planned.</p><span className="privacy__note"><ShieldCheck size={17}/> Encryption and room features are part of the upcoming application, not active in this homepage preview.</span></div>
         </section>

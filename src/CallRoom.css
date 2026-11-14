@@ -12,6 +12,9 @@
 .callroom__waiting p{color:#f5c518}.callroom__waiting small{color:#aaa}
 .callroom__controls{display:flex;justify-content:center;align-items:center;gap:14px;padding:22px}
 .callroom__controls button{display:grid;place-items:center;width:56px;height:56px;border-radius:50%;background:#27292d;border:1px solid #ffffff22;color:#fff;cursor:pointer}
-.callroom__controls button:hover{background:#414247}.callroom__controls .callroom__hangup{background:#e44242}
-.callroom__error{background:#3e1717;color:#ffc6c6;padding:12px 24px;text-align:center}
-@media(max-width:650px){.callroom__header{padding:0 15px;height:62px}.callroom__status{display:none}.callroom__stage{margin:8px 8px 0}.callroom__self{width:34vw;bottom:12px;right:12px}.callroom__controls{padding:15px}.callroom__waiting{padding:25px}.callroom__waiting small{max-width:230px}}
+.callroom__controls button:hover{background:#414247}.callroom__controls button:disabled{opacity:.45;cursor:not-allowed}.callroom__controls .callroom__hangup{background:#e44242}
+.callroom__play,.callroom__media-retry{border:1px solid #f5c51888;background:#171717;color:#f5c518;padding:12px 17px;font:600 11px monospace;letter-spacing:.04em;cursor:pointer}
+.callroom__play{position:absolute;z-index:2;left:50%;top:50%;transform:translate(-50%,-50%)}
+.callroom__media-retry{align-self:center;margin:0 0 12px}
+.callroom__error{background:#3e1717;color:#ffc6c6;padding:12px 24px;text-align:center;margin:0}
+@media(max-width:650px){.callroom__header{padding:0 15px;height:62px}.callroom__status{display:none}.callroom__stage{margin:8px 8px 0}.callroom__self{width:34vw;bottom:12px;right:12px}.callroom__controls{padding:15px}.callroom__waiting{padding:25px}}
