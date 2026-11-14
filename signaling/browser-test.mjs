@@ -97,6 +97,13 @@ async function forceLocalIce(context) {
   })
 }
 
+async function revealControls(page) {
+  await page.evaluate(() => {
+    document.querySelector('.callroom__stage')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+  })
+  await page.waitForFunction(() => !document.querySelector('.callroom')?.classList.contains('callroom--controls-hidden'))
+}
+
 const serverEnv = {
   ...process.env,
   PORT: String(signalingPort),
@@ -169,6 +176,24 @@ try {
   await pageB.goto(origin + '/?room=' + encodeURIComponent(callRoomId), { waitUntil: 'domcontentloaded' })
   await Promise.all([waitForRemote(pageA), waitForRemote(pageB)])
   await Promise.all([assertLocalTracks(pageA), assertLocalTracks(pageB)])
+  await Promise.all([
+    pageA.waitForFunction(() => document.querySelector('.callroom__remote')?.classList.contains('callroom__remote--mirrored')),
+    pageB.waitForFunction(() => document.querySelector('.callroom__remote')?.classList.contains('callroom__remote--mirrored')),
+  ])
+  await pageA.waitForFunction(() => document.querySelector('.callroom')?.classList.contains('callroom--controls-hidden'), null, { timeout: 6000 })
+  await pageA.waitForTimeout(400)
+  const hiddenBar = await pageA.evaluate(() => {
+    const controls = document.querySelector('.callroom__controls')
+    return {
+      pointerEvents: getComputedStyle(controls).pointerEvents,
+      bottom: controls.getBoundingClientRect().bottom,
+      viewportHeight: window.innerHeight,
+    }
+  })
+  assert.equal(hiddenBar.pointerEvents, 'none')
+  assert.ok(hiddenBar.bottom > hiddenBar.viewportHeight)
+  await revealControls(pageA)
+  await revealControls(pageB)
 
   const quality = await pageA.evaluate(() => {
     const localVideo = document.querySelector('.callroom__self')
@@ -190,13 +215,13 @@ try {
   assert.ok(quality.audioConstraints.noiseSuppression)
   assert.ok(quality.audioConstraints.autoGainControl)
   assert.ok(quality.videoSettings.width <= 1920 && quality.videoSettings.height <= 1080)
-  assert.equal(quality.localTransform, 'none')
-  assert.equal(quality.remoteTransform, 'none')
+  assert.equal(quality.localTransform, 'matrix(-1, 0, 0, 1, 0, 0)')
+  assert.equal(quality.remoteTransform, 'matrix(-1, 0, 0, 1, 0, 0)')
   assert.equal(await pageA.getByRole('button', { name: 'Switch to back camera' }).isEnabled(), true)
   await pageA.getByRole('button', { name: 'Switch to back camera' }).click()
   await pageA.getByRole('button', { name: 'Switch to front camera' }).waitFor()
-  await pageA.waitForFunction(() => document.querySelector('.callroom__self')?.srcObject?.getVideoTracks()[0]?.readyState === 'live')
-  await pageB.waitForFunction(() => document.querySelector('.callroom__remote')?.srcObject?.getVideoTracks()[0]?.readyState === 'live')
+  await pageA.waitForFunction(() => document.querySelector('.callroom__self')?.srcObject?.getVideoTracks()[0]?.readyState === 'live' && !document.querySelector('.callroom__self')?.classList.contains('callroom__self--mirrored'))
+  await pageB.waitForFunction(() => document.querySelector('.callroom__remote')?.srcObject?.getVideoTracks()[0]?.readyState === 'live' && !document.querySelector('.callroom__remote')?.classList.contains('callroom__remote--mirrored'))
   const mobileControls = await pageB.evaluate(() => {
     const controls = document.querySelector('.callroom__controls')
     const bounds = controls.getBoundingClientRect()
@@ -217,6 +242,9 @@ try {
   await pageA.waitForFunction(() => document.querySelector('.callroom')?.classList.contains('callroom--fullscreen'))
   await pageA.getByRole('button', { name: 'Exit full-screen view' }).click()
   await pageA.waitForFunction(() => !document.querySelector('.callroom')?.classList.contains('callroom--fullscreen'))
+  await pageB.waitForFunction(() => document.querySelector('.callroom')?.classList.contains('callroom--controls-hidden'), null, { timeout: 6000 })
+  await pageB.evaluate(() => document.querySelector('.callroom')?.dispatchEvent(new PointerEvent('pointermove', { bubbles: true })))
+  await pageB.waitForFunction(() => !document.querySelector('.callroom')?.classList.contains('callroom--controls-hidden'))
 
   await pageA.getByRole('button', { name: 'Mute' }).click()
   await pageA.waitForFunction(() => document.querySelector('.callroom__self')?.srcObject?.getAudioTracks().every(track => !track.enabled))
@@ -238,7 +266,9 @@ try {
   await waitForHttp('http://127.0.0.1:' + signalingPort + '/healthz', signaling)
   await Promise.all([waitForRemote(pageB), waitForRemote(pageC)])
 
+  await revealControls(pageB)
   await pageB.getByRole('button', { name: 'Leave call' }).click()
+  await revealControls(pageC)
   await pageC.getByRole('button', { name: 'Leave call' }).click()
   await pageB.waitForSelector('.hero')
   await pageC.waitForSelector('.hero')
