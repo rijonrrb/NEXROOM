@@ -1,0 +1,17 @@
+.callroom{position:fixed;inset:0;background:#08090b;color:#fff;z-index:200;display:flex;flex-direction:column;font-family:inherit}
+.callroom__header{height:76px;display:flex;justify-content:space-between;align-items:center;padding:0 32px;border-bottom:1px solid #ffffff19}
+.callroom__header b{font-size:21px;letter-spacing:-.05em}.callroom__header b span{color:#f5c518}
+.callroom__header>div{display:flex;align-items:center;gap:22px}
+.callroom__status{font:500 11px monospace;color:#d2bd6b;letter-spacing:.04em}
+.callroom__invite{display:flex;align-items:center;gap:9px;border:1px solid #f5c51888;color:#f5c518;padding:12px 17px;background:transparent;cursor:pointer;font-size:11px}
+.callroom__stage{position:relative;flex:1;min-height:0;margin:18px 24px 0;background:radial-gradient(ellipse at center,#1b1b18,#08090b 65%);overflow:hidden}
+.callroom__remote{width:100%;height:100%;object-fit:contain}
+.callroom__self{position:absolute;bottom:18px;right:18px;width:min(24vw,250px);aspect-ratio:4/3;background:#1d1d1d;object-fit:cover;border:1px solid #ffffff44;box-shadow:0 8px 40px #0008;transform:scaleX(-1)}
+.callroom__waiting{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:16px;text-align:center;pointer-events:none}
+.callroom__waiting svg{color:#f5c518}.callroom__waiting h1{font-size:clamp(24px,4vw,50px);letter-spacing:-.05em}
+.callroom__waiting p{color:#f5c518}.callroom__waiting small{color:#aaa}
+.callroom__controls{display:flex;justify-content:center;align-items:center;gap:14px;padding:22px}
+.callroom__controls button{display:grid;place-items:center;width:56px;height:56px;border-radius:50%;background:#27292d;border:1px solid #ffffff22;color:#fff;cursor:pointer}
+.callroom__controls button:hover{background:#414247}.callroom__controls .callroom__hangup{background:#e44242}
+.callroom__error{background:#3e1717;color:#ffc6c6;padding:12px 24px;text-align:center}
+@media(max-width:650px){.callroom__header{padding:0 15px;height:62px}.callroom__status{display:none}.callroom__stage{margin:8px 8px 0}.callroom__self{width:34vw;bottom:12px;right:12px}.callroom__controls{padding:15px}.callroom__waiting{padding:25px}.callroom__waiting small{max-width:230px}}

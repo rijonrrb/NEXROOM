@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { ArrowDownRight, ArrowRight, ArrowUpRight, Camera, Check, FileUp, Fingerprint, Link2, LockKeyhole, Menu, MessageSquare, MonitorUp, ShieldCheck, Video, X } from 'lucide-react'
+import { ArrowDownRight, ArrowRight, ArrowUpRight, Camera, Check, FileUp, Fingerprint, Link2, Menu, MessageSquare, MonitorUp, ShieldCheck, Video, X } from 'lucide-react'
 import './App.css'
 import WaveVisual from './WaveVisual'
+import CallRoom from './CallRoom'
 
 type ModalMode = 'create' | 'join' | null
 
@@ -26,8 +27,20 @@ function App() {
   const [purpose, setPurpose] = useState('')
   const [invite, setInvite] = useState('')
   const [displayName, setDisplayName] = useState('')
-  const [requireApproval, setRequireApproval] = useState(true)
   const [notice, setNotice] = useState('')
+  const [activeRoom,setActiveRoom] = useState<string|null>(() => {
+    const id=new URLSearchParams(window.location.search).get('room')
+    return id && /^[a-zA-Z0-9_-]{12,80}$/.test(id) ? id : null
+  })
+  const enterRoom=(id:string)=>{
+    window.history.pushState({},'', '/?room='+encodeURIComponent(id))
+    setModal(null)
+    setActiveRoom(id)
+  }
+  const leaveRoom=()=>{
+    window.history.pushState({},'',window.location.pathname)
+    setActiveRoom(null)
+  }
 
   useEffect(() => {
     document.body.style.overflow = modal ? 'hidden' : ''
@@ -44,8 +57,19 @@ function App() {
 
   const submitPreview = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setNotice('The interface is ready. Secure room creation and joining will be connected in the next development phase.')
+    if(modal==='create'){
+      const bytes=new Uint8Array(18)
+      crypto.getRandomValues(bytes)
+      enterRoom(Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join(''))
+    }else{
+      let value=invite.trim()
+      try { value=new URL(value).searchParams.get('room')||value } catch { /* room code */ }
+      if(!/^[a-zA-Z0-9_-]{12,80}$/.test(value)){setNotice('Enter a valid NEXROOM invite URL or room code.');return}
+      enterRoom(value)
+    }
   }
+
+  if(activeRoom)return <CallRoom roomId={activeRoom} onLeave={leaveRoom}/>
 
   return (
     <div className="site">
@@ -116,26 +140,25 @@ function App() {
       {modal && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setModal(null) }}>
         <section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-heading">
           <div className="modal__header"><div className="modal__icon">{modal === 'create' ? <Camera size={22}/> : <Link2 size={22}/>}</div><button type="button" className="modal__close" onClick={() => setModal(null)} aria-label="Close dialog"><X size={21}/></button></div>
-          <p className="eyebrow"><span className="eyebrow__slash">/</span> NEXROOM INTERFACE PREVIEW</p>
+          <p className="eyebrow"><span className="eyebrow__slash">/</span> NEXROOM / ONE-TO-ONE BETA</p>
           <h2 id="modal-heading">{modal === 'create' ? 'Create a room' : 'Join a room'}</h2>
-          <p className="modal__desc">{modal === 'create' ? 'Give your space a name and choose who can join.' : 'Enter an invite link and the name others will see.'}</p>
+          <p className="modal__desc">{modal === 'create' ? 'Name your space and share its private invite link. Host approval is coming later.' : 'Enter an invite link and the name others will see.'}</p>
           <form onSubmit={submitPreview} className="modal__form">
             {modal === 'create' ? <>
               <label htmlFor="room-name">ROOM NAME</label>
               <input id="room-name" value={roomName} onChange={e => setRoomName(e.target.value)} placeholder="e.g. Project Sync" required maxLength={80}/>
               <label htmlFor="room-purpose">PURPOSE <span>(OPTIONAL)</span></label>
               <textarea id="room-purpose" value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="What will you discuss?" maxLength={200} rows={3}/>
-              <label className="checkline"><span><LockKeyhole size={17}/> REQUIRE HOST APPROVAL</span><input type="checkbox" checked={requireApproval} onChange={e => setRequireApproval(e.target.checked)}/></label>
             </> : <>
               <label htmlFor="invite">ROOM LINK OR CODE</label>
               <input id="invite" value={invite} onChange={e => setInvite(e.target.value)} placeholder="Paste the private invite link" required/>
               <label htmlFor="display-name">YOUR DISPLAY NAME</label>
               <input id="display-name" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Name for this session" required maxLength={60}/>
             </>}
-            <button type="submit" className="btn btn--primary modal__submit">{modal === 'create' ? 'PREVIEW ROOM SETUP' : 'PREVIEW JOIN REQUEST'} <ArrowRight size={18}/></button>
+            <button type="submit" className="btn btn--primary modal__submit">{modal === 'create' ? 'START ROOM' : 'JOIN CALL'} <ArrowRight size={18}/></button>
           </form>
           {notice && <p role="status" className="modal__notice"><Check size={17}/>{notice}</p>}
-          <p className="modal__disclaimer">UI preview only · The calling server will be implemented next.</p>
+          <p className="modal__disclaimer">Beta: calling requires a running signaling server and camera/microphone permission.</p>
         </section>
       </div>}
     </div>
