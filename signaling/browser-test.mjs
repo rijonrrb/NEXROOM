@@ -56,7 +56,22 @@ async function waitForRemote(page, videoRequired = true) {
       && stream.getAudioTracks().length > 0
       && (!requireVideo || stream.getVideoTracks().length > 0)
   }, { videoRequired }, { timeout: 30000 })
-  await page.waitForFunction(() => document.querySelector('.callroom__status')?.textContent?.includes('LIVE'), null, { timeout: 30000 })
+  try {
+    await page.waitForFunction(() => document.querySelector('.callroom__status')?.textContent?.includes('LIVE'), null, { timeout: 30000 })
+  } catch (error) {
+    const state = await page.evaluate(() => {
+      const local = document.querySelector('.callroom__self')?.srcObject
+      const remote = document.querySelector('.callroom__remote')?.srcObject
+      return {
+        status: document.querySelector('.callroom__status')?.textContent,
+        error: document.querySelector('.callroom__error')?.textContent,
+        localAudio: local instanceof MediaStream ? local.getAudioTracks().length : 0,
+        remoteAudio: remote instanceof MediaStream ? remote.getAudioTracks().length : 0,
+        remoteVideo: remote instanceof MediaStream ? remote.getVideoTracks().length : 0,
+      }
+    })
+    throw new Error((error instanceof Error ? error.message : String(error)) + ' ' + JSON.stringify(state))
+  }
 }
 
 async function assertLocalTracks(page, videoRequired = true) {
@@ -69,6 +84,17 @@ async function assertLocalTracks(page, videoRequired = true) {
   })
   assert.equal(tracks.audio, true, 'local microphone track should be live')
   assert.equal(tracks.video, videoRequired, 'local camera availability should match the test')
+}
+
+async function forceLocalIce(context) {
+  await context.addInitScript(() => {
+    const NativePeerConnection = window.RTCPeerConnection
+    window.RTCPeerConnection = new Proxy(NativePeerConnection, {
+      construct(target, args, newTarget) {
+        return Reflect.construct(target, [{ ...args[0], iceServers: [] }], newTarget)
+      },
+    })
+  })
 }
 
 const serverEnv = {
@@ -100,12 +126,39 @@ try {
   })
 
   const contextA = await browser.newContext({ permissions: ['camera', 'microphone'] })
-  const contextB = await browser.newContext({ permissions: ['camera', 'microphone'] })
+  const contextB = await browser.newContext({ permissions: ['camera', 'microphone'], viewport: { width: 390, height: 844 } })
+  await Promise.all([forceLocalIce(contextA), forceLocalIce(contextB)])
   const pageA = await contextA.newPage()
+  await pageA.addInitScript(() => {
+    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', { value: undefined })
+    const mediaDevices = navigator.mediaDevices
+    const originalEnumerateDevices = mediaDevices.enumerateDevices.bind(mediaDevices)
+    const originalGetUserMedia = mediaDevices.getUserMedia.bind(mediaDevices)
+    const originalApplyConstraints = MediaStreamTrack.prototype.applyConstraints
+    mediaDevices.enumerateDevices = async () => [
+      ...await originalEnumerateDevices(),
+      { deviceId: 'test-back-camera', groupId: 'test-cameras', kind: 'videoinput', label: 'Test back camera', toJSON: () => ({}) },
+    ]
+    mediaDevices.getUserMedia = constraints => {
+      if (constraints.video?.facingMode?.exact === 'environment') {
+        return Promise.reject(new DOMException('Simulated facing mode unavailable', 'OverconstrainedError'))
+      }
+      if (constraints.video?.deviceId?.exact === 'test-back-camera') {
+        return originalGetUserMedia({ audio: false, video: true })
+      }
+      return originalGetUserMedia(constraints)
+    }
+    MediaStreamTrack.prototype.applyConstraints = function(constraints) {
+      if (constraints.facingMode?.exact === 'environment') {
+        return Promise.reject(new DOMException('Simulated facing mode unavailable', 'OverconstrainedError'))
+      }
+      return originalApplyConstraints.call(this, constraints)
+    }
+  })
   const pageB = await contextB.newPage()
   for (const page of [pageA, pageB]) page.setDefaultTimeout(15000)
 
-  await pageA.goto(origin)
+  await pageA.goto(origin, { waitUntil: 'domcontentloaded' })
   await pageA.getByRole('button', { name: /CREATE A ROOM/ }).click()
   await pageA.getByLabel('ROOM NAME').fill('Browser test')
   await pageA.getByRole('button', { name: 'START ROOM' }).click()
@@ -113,9 +166,57 @@ try {
   const callRoomId = callUrl.searchParams.get('room')
   assert.ok(callRoomId, 'room id should be present in the URL')
   await pageA.waitForSelector('.callroom')
-  await pageB.goto(origin + '/?room=' + encodeURIComponent(callRoomId))
+  await pageB.goto(origin + '/?room=' + encodeURIComponent(callRoomId), { waitUntil: 'domcontentloaded' })
   await Promise.all([waitForRemote(pageA), waitForRemote(pageB)])
   await Promise.all([assertLocalTracks(pageA), assertLocalTracks(pageB)])
+
+  const quality = await pageA.evaluate(() => {
+    const localVideo = document.querySelector('.callroom__self')
+    const stream = localVideo?.srcObject
+    const videoTrack = stream instanceof MediaStream ? stream.getVideoTracks()[0] : undefined
+    const audioTrack = stream instanceof MediaStream ? stream.getAudioTracks()[0] : undefined
+    return {
+      videoConstraints: videoTrack?.getConstraints(),
+      videoSettings: videoTrack?.getSettings(),
+      audioConstraints: audioTrack?.getConstraints(),
+      localTransform: localVideo ? getComputedStyle(localVideo).transform : null,
+      remoteTransform: getComputedStyle(document.querySelector('.callroom__remote')).transform,
+    }
+  })
+  assert.equal(quality.videoConstraints.width.ideal, 1920)
+  assert.equal(quality.videoConstraints.height.ideal, 1080)
+  assert.equal(quality.videoConstraints.frameRate.max, 30)
+  assert.ok(quality.audioConstraints.echoCancellation)
+  assert.ok(quality.audioConstraints.noiseSuppression)
+  assert.ok(quality.audioConstraints.autoGainControl)
+  assert.ok(quality.videoSettings.width <= 1920 && quality.videoSettings.height <= 1080)
+  assert.equal(quality.localTransform, 'none')
+  assert.equal(quality.remoteTransform, 'none')
+  assert.equal(await pageA.getByRole('button', { name: 'Switch to back camera' }).isEnabled(), true)
+  await pageA.getByRole('button', { name: 'Switch to back camera' }).click()
+  await pageA.getByRole('button', { name: 'Switch to front camera' }).waitFor()
+  await pageA.waitForFunction(() => document.querySelector('.callroom__self')?.srcObject?.getVideoTracks()[0]?.readyState === 'live')
+  await pageB.waitForFunction(() => document.querySelector('.callroom__remote')?.srcObject?.getVideoTracks()[0]?.readyState === 'live')
+  const mobileControls = await pageB.evaluate(() => {
+    const controls = document.querySelector('.callroom__controls')
+    const bounds = controls.getBoundingClientRect()
+    return {
+      viewportWidth: document.documentElement.clientWidth,
+      controlsRight: bounds.right,
+      buttonCount: controls.querySelectorAll('button').length,
+    }
+  })
+  assert.ok(mobileControls.controlsRight <= mobileControls.viewportWidth)
+  assert.equal(mobileControls.buttonCount, 6)
+
+  await pageA.getByRole('button', { name: 'Show your video large' }).click()
+  await pageA.waitForFunction(() => document.querySelector('.callroom__self')?.classList.contains('callroom__self--main'))
+  await pageA.getByRole('button', { name: 'Show participant large' }).click()
+  await pageA.waitForFunction(() => !document.querySelector('.callroom__self')?.classList.contains('callroom__self--main'))
+  await pageA.getByRole('button', { name: 'Enter full-screen view' }).click()
+  await pageA.waitForFunction(() => document.querySelector('.callroom')?.classList.contains('callroom--fullscreen'))
+  await pageA.getByRole('button', { name: 'Exit full-screen view' }).click()
+  await pageA.waitForFunction(() => !document.querySelector('.callroom')?.classList.contains('callroom--fullscreen'))
 
   await pageA.getByRole('button', { name: 'Mute' }).click()
   await pageA.waitForFunction(() => document.querySelector('.callroom__self')?.srcObject?.getAudioTracks().every(track => !track.enabled))
@@ -128,7 +229,7 @@ try {
   await pageB.waitForFunction(() => document.querySelector('.callroom__status')?.textContent?.includes('Other participant left'))
   const pageC = await contextA.newPage()
   pageC.setDefaultTimeout(15000)
-  await pageC.goto(origin + '/?room=' + encodeURIComponent(callRoomId))
+  await pageC.goto(origin + '/?room=' + encodeURIComponent(callRoomId), { waitUntil: 'domcontentloaded' })
   await Promise.all([waitForRemote(pageB), waitForRemote(pageC)])
 
   await stopProcess(signaling)
@@ -144,6 +245,8 @@ try {
 
   const voiceRoomId = 'voiceroom1234567890abcdefgh'
   const voiceContext = await browser.newContext({ permissions: ['microphone'] })
+  const peerContext = await browser.newContext({ permissions: ['camera', 'microphone'] })
+  await Promise.all([forceLocalIce(voiceContext), forceLocalIce(peerContext)])
   await voiceContext.addInitScript(() => {
     const mediaDevices = navigator.mediaDevices
     const original = mediaDevices.getUserMedia.bind(mediaDevices)
@@ -153,9 +256,11 @@ try {
     }
   })
   const voicePage = await voiceContext.newPage()
-  const peerContext = await browser.newContext({ permissions: ['camera', 'microphone'] })
   const peerPage = await peerContext.newPage()
-  await Promise.all([voicePage.goto(origin + '/?room=' + voiceRoomId), peerPage.goto(origin + '/?room=' + voiceRoomId)])
+  await Promise.all([
+    voicePage.goto(origin + '/?room=' + voiceRoomId, { waitUntil: 'domcontentloaded' }),
+    peerPage.goto(origin + '/?room=' + voiceRoomId, { waitUntil: 'domcontentloaded' }),
+  ])
   await Promise.all([waitForRemote(voicePage, false), waitForRemote(peerPage, false)])
   await assertLocalTracks(voicePage, false)
   assert.equal(await voicePage.getByRole('button', { name: 'Turn camera on' }).isDisabled(), true)

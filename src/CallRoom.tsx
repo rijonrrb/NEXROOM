@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Camera, CameraOff, Copy, Mic, MicOff, PhoneOff, Video } from 'lucide-react'
+import { ArrowLeftRight, Camera, CameraOff, Copy, Expand, Mic, MicOff, Minimize2, PhoneOff, RefreshCw, Video } from 'lucide-react'
 import './CallRoom.css'
 
 type Signal = {
@@ -11,6 +11,31 @@ type Signal = {
 }
 const SIGNAL_URL = import.meta.env.VITE_SIGNAL_URL || (import.meta.env.DEV ? 'ws://localhost:3001' : 'wss://signal.devrijonn.com')
 const ICE_SERVERS: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }]
+const AUDIO_CAPTURE: MediaTrackConstraints = {
+  autoGainControl: { ideal: true },
+  channelCount: { ideal: 1 },
+  echoCancellation: { ideal: true },
+  noiseSuppression: { ideal: true },
+  sampleRate: { ideal: 48000 },
+}
+const VIDEO_CAPTURE: MediaTrackConstraints = {
+  facingMode: { ideal: 'user' },
+  frameRate: { ideal: 30, max: 30 },
+  height: { ideal: 1080, max: 1080 },
+  width: { ideal: 1920, max: 1920 },
+}
+
+function configureVideoSender(sender: RTCRtpSender) {
+  const parameters = sender.getParameters()
+  if (!parameters.encodings.length) return
+  for (const encoding of parameters.encodings) {
+    encoding.maxBitrate = 4_000_000
+    encoding.maxFramerate = 30
+  }
+  void sender.setParameters(parameters).catch(error => {
+    console.warn('Could not apply video quality settings', error)
+  })
+}
 
 function mediaErrorMessage(error: unknown) {
   const name = error instanceof DOMException ? error.name : ''
@@ -40,6 +65,17 @@ export default function CallRoom({ roomId, onLeave }: { roomId: string; onLeave:
   const [audioOnly, setAudioOnly] = useState(false)
   const [mediaRetryAvailable, setMediaRetryAvailable] = useState(false)
   const [needsPlayback, setNeedsPlayback] = useState(false)
+  const [selfPrimary, setSelfPrimary] = useState(false)
+  const [fullscreen, setFullscreen] = useState(false)
+  const [cameraFacing, setCameraFacing] = useState<'user' | 'environment'>('user')
+  const [switchingCamera, setSwitchingCamera] = useState(false)
+  const callRoom = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    const handleFullscreenChange = () => setFullscreen(Boolean(document.fullscreenElement))
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -119,7 +155,13 @@ export default function CallRoom({ roomId, onLeave }: { roomId: string; onLeave:
       peer = connection
       pcRef.current = connection
       polite = localPeerId.localeCompare(remotePeerId) > 0
-      for (const track of localStream.getTracks()) connection.addTrack(track, localStream)
+      for (const track of localStream.getTracks()) {
+        const sender = connection.addTrack(track, localStream)
+        if (track.kind === 'video') {
+          track.contentHint = 'motion'
+          configureVideoSender(sender)
+        }
+      }
 
       connection.onicecandidate = event => {
         if (event.candidate) send({ type: 'ice-candidate', data: event.candidate.toJSON() })
@@ -301,12 +343,12 @@ export default function CallRoom({ roomId, onLeave }: { roomId: string; onLeave:
         if (!navigator.mediaDevices?.getUserMedia) throw new Error('MEDIA_UNAVAILABLE')
         let media: MediaStream
         try {
-          media = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+          media = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CAPTURE, video: VIDEO_CAPTURE })
           setAudioOnly(false)
           setCameraOff(false)
         } catch (cameraError) {
           console.warn('Camera unavailable, trying audio-only', cameraError)
-          media = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+          media = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CAPTURE, video: false })
           setAudioOnly(true)
           setCameraOff(true)
         }
@@ -319,6 +361,9 @@ export default function CallRoom({ roomId, onLeave }: { roomId: string; onLeave:
         streamRef.current = media
         setHasAudio(media.getAudioTracks().length > 0)
         setHasCamera(media.getVideoTracks().length > 0)
+        const capturedFacingMode = media.getVideoTracks()[0]?.getSettings().facingMode
+        setCameraFacing(capturedFacingMode === 'environment' ? 'environment' : 'user')
+        for (const track of media.getVideoTracks()) track.contentHint = 'motion'
         if (localVideo.current) localVideo.current.srcObject = media
         setStatus('Connecting to signaling…')
         connectSignal()
@@ -366,6 +411,111 @@ export default function CallRoom({ roomId, onLeave }: { roomId: string; onLeave:
     setCameraOff(!cameraOff)
   }
 
+  const switchCamera = async () => {
+    const currentStream = streamRef.current
+    const currentTrack = currentStream?.getVideoTracks()[0]
+    if (!currentStream || !currentTrack || switchingCamera) return
+
+    const nextFacing = cameraFacing === 'user' ? 'environment' : 'user'
+    const currentDeviceId = currentTrack.getSettings().deviceId
+    const sender = pcRef.current?.getSenders().find(item => item.track?.kind === 'video')
+    let nextStream: MediaStream | null = null
+    let releasedCurrentCamera = false
+    setSwitchingCamera(true)
+    setError('')
+
+    try {
+      try {
+        await currentTrack.applyConstraints({ facingMode: { exact: nextFacing } })
+        if (currentTrack.getSettings().facingMode === nextFacing) {
+          currentTrack.contentHint = 'motion'
+          if (sender) configureVideoSender(sender)
+          setCameraFacing(nextFacing)
+          setCameraOff(false)
+          return
+        }
+      } catch {
+        // Some browsers cannot change the active camera track in place.
+      }
+
+      const alternate = (await navigator.mediaDevices.enumerateDevices())
+        .find(device => device.kind === 'videoinput' && device.deviceId && device.deviceId !== currentDeviceId)
+      currentStream.removeTrack(currentTrack)
+      currentTrack.stop()
+      releasedCurrentCamera = true
+
+      try {
+        nextStream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { ...VIDEO_CAPTURE, facingMode: { exact: nextFacing } },
+        })
+      } catch (facingError) {
+        if (!alternate) throw facingError
+        nextStream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { ...VIDEO_CAPTURE, deviceId: { exact: alternate.deviceId } },
+        })
+      }
+
+      const nextTrack = nextStream.getVideoTracks()[0]
+      if (!nextTrack) throw new Error('No alternate video track')
+      if (sender) await sender.replaceTrack(nextTrack)
+      currentStream.addTrack(nextTrack)
+      nextTrack.contentHint = 'motion'
+      if (sender) configureVideoSender(sender)
+      if (localVideo.current) {
+        localVideo.current.srcObject = currentStream
+        void localVideo.current.play().catch(() => {})
+      }
+      setHasCamera(true)
+      setCameraFacing(nextFacing)
+      setCameraOff(false)
+    } catch {
+      nextStream?.getTracks().forEach(track => track.stop())
+      if (releasedCurrentCamera) {
+        try {
+          const recoveryVideo: MediaTrackConstraints = currentDeviceId
+            ? { ...VIDEO_CAPTURE, deviceId: { exact: currentDeviceId } }
+            : { ...VIDEO_CAPTURE, facingMode: { ideal: cameraFacing } }
+          const recoveryStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: recoveryVideo })
+          const recoveryTrack = recoveryStream.getVideoTracks()[0]
+          if (!recoveryTrack) throw new Error('No camera track to restore')
+          if (sender) await sender.replaceTrack(recoveryTrack)
+          currentStream.addTrack(recoveryTrack)
+          recoveryTrack.contentHint = 'motion'
+          if (localVideo.current) {
+            localVideo.current.srcObject = currentStream
+            void localVideo.current.play().catch(() => {})
+          }
+          setHasCamera(true)
+          setCameraOff(false)
+        } catch (recoveryError) {
+          console.error('Could not restore the previous camera', recoveryError)
+          setHasCamera(false)
+          setCameraOff(true)
+        }
+      }
+      setError('Could not switch camera. Make sure your device has another camera.')
+    } finally {
+      setSwitchingCamera(false)
+    }
+  }
+
+  const toggleFullscreen = async () => {
+    if (fullscreen) {
+      if (document.fullscreenElement) await document.exitFullscreen().catch(() => {})
+      setFullscreen(false)
+      return
+    }
+
+    setFullscreen(true)
+    try {
+      await callRoom.current?.requestFullscreen?.()
+    } catch (fullscreenError) {
+      console.warn('Native fullscreen unavailable; using the expanded call layout', fullscreenError)
+    }
+  }
+
   const copyInvite = async () => {
     try {
       await navigator.clipboard.writeText(window.location.origin + '/?room=' + encodeURIComponent(roomId))
@@ -380,19 +530,22 @@ export default function CallRoom({ roomId, onLeave }: { roomId: string; onLeave:
     void remoteVideo.current.play().then(() => setNeedsPlayback(false)).catch(() => setNeedsPlayback(true))
   }
 
-  return <main className="callroom">
+  return <main ref={callRoom} className={`callroom${fullscreen ? ' callroom--fullscreen' : ''}`}>
     <header className="callroom__header"><b>NEX<span>ROOM</span>.</b><div><span className="callroom__status">{connected ? '● LIVE' : '○ ' + status}</span><button onClick={copyInvite} className="callroom__invite"><Copy size={16}/>{copied ? 'COPIED' : 'COPY INVITE'}</button></div></header>
     <div className="callroom__stage">
-      <video ref={remoteVideo} autoPlay playsInline aria-label="Remote participant video" className="callroom__remote"/>
+      <video ref={remoteVideo} autoPlay playsInline aria-label="Remote participant video" className={`callroom__remote${selfPrimary ? ' callroom__remote--pip' : ''}`}/>
       {needsPlayback && <button className="callroom__play" onClick={enablePlayback}>TAP TO ENABLE AUDIO / VIDEO</button>}
       {!connected && <div className="callroom__waiting"><Video size={42}/><h1>YOUR PRIVATE ROOM</h1><p>{status}</p><small>Share your invite link to start a one-to-one call.</small></div>}
-      <video ref={localVideo} autoPlay playsInline muted aria-label="Your video" className="callroom__self"/>
+      <video ref={localVideo} autoPlay playsInline muted aria-label="Your video" className={`callroom__self${selfPrimary ? ' callroom__self--main' : ''}`}/>
     </div>
     {error && <p role="alert" className="callroom__error">{error}</p>}
     {mediaRetryAvailable && <button className="callroom__media-retry" onClick={() => retryMediaRef.current()}>ALLOW MICROPHONE AND TRY AGAIN</button>}
     <div className="callroom__controls">
       <button onClick={toggleMic} disabled={!hasAudio} aria-label={muted ? 'Unmute' : 'Mute'}>{muted ? <MicOff/> : <Mic/>}</button>
-      <button onClick={toggleCamera} disabled={audioOnly || !hasCamera} aria-label={cameraOff ? 'Turn camera on' : 'Turn camera off'}>{cameraOff ? <CameraOff/> : <Camera/>}</button>
+      <button onClick={toggleCamera} disabled={audioOnly || !hasCamera} aria-label={cameraOff ? 'Turn camera on' : 'Turn camera off'} title={cameraOff ? 'Turn camera on' : 'Turn camera off'}>{cameraOff ? <CameraOff/> : <Camera/>}</button>
+      <button onClick={switchCamera} disabled={!hasCamera || switchingCamera} aria-label={cameraFacing === 'user' ? 'Switch to back camera' : 'Switch to front camera'} title={cameraFacing === 'user' ? 'Switch to back camera' : 'Switch to front camera'}><RefreshCw/></button>
+      <button onClick={() => setSelfPrimary(!selfPrimary)} disabled={!connected} aria-pressed={selfPrimary} aria-label={selfPrimary ? 'Show participant large' : 'Show your video large'} title={selfPrimary ? 'Show participant large' : 'Show your video large'}><ArrowLeftRight/></button>
+      <button onClick={toggleFullscreen} aria-pressed={fullscreen} aria-label={fullscreen ? 'Exit full-screen view' : 'Enter full-screen view'} title={fullscreen ? 'Exit full-screen view' : 'Enter full-screen view'}>{fullscreen ? <Minimize2/> : <Expand/>}</button>
       <button onClick={onLeave} className="callroom__hangup" aria-label="Leave call"><PhoneOff/></button>
     </div>
   </main>
