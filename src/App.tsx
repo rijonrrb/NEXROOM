@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { ArrowDownRight, ArrowRight, ArrowUpRight, Camera, Check, FileUp, Fingerprint, Link2, LockKeyhole, Menu, MessageSquare, MonitorUp, ShieldCheck, Video, X } from 'lucide-react'
+import { ArrowDownRight, ArrowRight, ArrowUpRight, Camera, Check, FileUp, Fingerprint, Link2, Menu, MessageSquare, MonitorUp, ShieldCheck, Video, X } from 'lucide-react'
 import './App.css'
 import WaveVisual from './WaveVisual'
 import CallRoom from './CallRoom'
@@ -27,7 +27,6 @@ function App() {
   const [purpose, setPurpose] = useState('')
   const [invite, setInvite] = useState('')
   const [displayName, setDisplayName] = useState('')
-  const [requireApproval, setRequireApproval] = useState(true)
   const [notice, setNotice] = useState('')
   const [activeRoom,setActiveRoom] = useState<string|null>(() => {
     const id=new URLSearchParams(window.location.search).get('room')
@@ -143,14 +142,13 @@ function App() {
           <div className="modal__header"><div className="modal__icon">{modal === 'create' ? <Camera size={22}/> : <Link2 size={22}/>}</div><button type="button" className="modal__close" onClick={() => setModal(null)} aria-label="Close dialog"><X size={21}/></button></div>
           <p className="eyebrow"><span className="eyebrow__slash">/</span> NEXROOM / ONE-TO-ONE BETA</p>
           <h2 id="modal-heading">{modal === 'create' ? 'Create a room' : 'Join a room'}</h2>
-          <p className="modal__desc">{modal === 'create' ? 'Give your space a name and choose who can join.' : 'Enter an invite link and the name others will see.'}</p>
+          <p className="modal__desc">{modal === 'create' ? 'Name your space and share its private invite link. Host approval is coming later.' : 'Enter an invite link and the name others will see.'}</p>
           <form onSubmit={submitPreview} className="modal__form">
             {modal === 'create' ? <>
               <label htmlFor="room-name">ROOM NAME</label>
               <input id="room-name" value={roomName} onChange={e => setRoomName(e.target.value)} placeholder="e.g. Project Sync" required maxLength={80}/>
               <label htmlFor="room-purpose">PURPOSE <span>(OPTIONAL)</span></label>
               <textarea id="room-purpose" value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="What will you discuss?" maxLength={200} rows={3}/>
-              <label className="checkline"><span><LockKeyhole size={17}/> REQUIRE HOST APPROVAL</span><input type="checkbox" checked={requireApproval} onChange={e => setRequireApproval(e.target.checked)}/></label>
             </> : <>
               <label htmlFor="invite">ROOM LINK OR CODE</label>
               <input id="invite" value={invite} onChange={e => setInvite(e.target.value)} placeholder="Paste the private invite link" required/>
