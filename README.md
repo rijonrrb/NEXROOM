@@ -1,37 +1,49 @@
 # NEXROOM
 
-A responsive, browser-first homepage for a private real-time collaboration platform. Built with React, TypeScript, and Vite.
+**A browser-first space for straightforward, real-time conversations.**
 
-## Current scope
+[Live website](https://nexroom.devrijonn.com/) · [Source code](https://github.com/rijonrrb/NEXROOM)
 
-This first commit includes the homepage, responsive navigation, features/steps/privacy sections, and accessible **UI-preview-only** Create Room and Join Room dialogs. No realtime calling, signaling server, storage, authentication, profile, or room management backend has been implemented yet. The next phase will introduce Node.js signaling and WebRTC.
+## Overview
 
-## Setup
+NEXROOM is an open-source communication and collaboration project designed to make connecting with someone as simple as sharing a link. Its focus is a clean, distraction-free experience that works directly in the browser—without installing an app or creating an account.
 
-Requires Node.js 20.19+ or 22.12+ (or newer compatible version).
+**The problem:** Starting a quick online conversation can feel unnecessarily complicated. NEXROOM explores an easier way to open a temporary space and connect, while leaving room for richer collaboration features in future releases.
 
-    npm install
-    npm run dev
-    npm run build
-    npm run preview
+**Who it's for:** students, remote collaborators, independent professionals, friends, and small teams who want lightweight, browser-based conversations.
 
-## Design
+## What the current beta can do
 
-- Dark \`#0A0A0A\`, yellow \`#F5C518\`, off-white
-- Space Grotesk and JetBrains Mono
-- Rounded matte UI components, restrained shadows and subtle wave animation
-- Reduced-motion accessibility
-- Designed for desktop and mobile browsers
+- **One-to-one voice and video calling** powered by WebRTC.
+- **Temporary rooms** created and joined using an invite link or room code.
+- **Microphone and camera controls**, including an audio-only fallback.
+- **Responsive calling interface** with fullscreen support and camera switching on supported devices.
+- **Connection feedback and recovery handling** to make interruptions easier to understand.
+- **Ephemeral room management:** signaling state is maintained in memory, without persistent user profiles or conversation history.
 
-## Deployment
+The frontend uses **React, TypeScript, and Vite**; a **Node.js/WebSocket signaling service** coordinates the peer connection. WebRTC handles call media between participants when the network permits.
 
-The frontend is a static Vite build emitted to \`dist/\`. Deployment automation can publish this folder to the NEXROOM subdomain once cPanel's document root and GitHub Actions credentials have been configured. **Never commit hosting credentials, API tokens, or \`.env\` files.**
+> **Current status: one-to-one beta.** Rooms support two participants. Anyone with a valid room link may join; host approval and identity verification are not implemented. Calls may fail on restrictive networks without relay support. The service is not a guarantee of end-to-end identity assurance.
 
-## Roadmap
+## Product vision
 
-1. Room creation, invite link, host approval, host handoff and ephemeral lifecycle
-2. WebRTC 1:1 and small-group calls with STUN/TURN fallback
-3. Encrypted, temporary chat/files and screen sharing
-4. Testing, browser compatibility, security hardening and deployment checks
+NEXROOM is intended to grow from a simple calling experience into a lightweight temporary collaboration space. Potential additions include:
 
-Encryption/privacy features are targets, not claims about the current homepage-only release.
+- In-room chat, reactions, and conversation tools.
+- Screen sharing for presenting work or reviewing ideas.
+- File sharing and shared-session utilities.
+- Better participant permissions, group collaboration, and broader network compatibility.
+
+**These are future plans—not features available in the current beta.**
+
+## Why this project matters
+
+NEXROOM combines thoughtful product design with practical real-time engineering. The project explores how an approachable interface, browser media permissions, connection recovery, and temporary room lifecycles can work together without burdening users with a complex onboarding process.
+
+## Contributing
+
+Feedback and contributions are welcome. Use [GitHub Issues](https://github.com/rijonrrb/NEXROOM/issues) for bugs and ideas. For code or documentation improvements, fork the repository and submit a focused [pull request](https://github.com/rijonrrb/NEXROOM/pulls). Please discuss large feature proposals in an issue before implementing them.
+
+---
+
+**NEXROOM is an evolving personal open-source project.** Features and privacy protections should be evaluated against the current beta, not the long-term vision.
