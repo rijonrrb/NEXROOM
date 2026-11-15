@@ -2,7 +2,7 @@
 
 **A browser-first space for straightforward, real-time conversations.**
 
-[Live website](https://nexroom.devrijonn.com/) · [Source code](https://github.com/rijonrrb/NEXROOM)
+[Live website](https://nexroom.devrijonn.com/)
 
 ## Overview
 
